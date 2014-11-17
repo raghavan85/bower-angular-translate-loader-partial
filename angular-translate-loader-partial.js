@@ -1,6 +1,6 @@
 /*!
- * angular-translate - v2.4.2 - 2014-10-21
- * http://github.com/angular-translate/angular-translate
+ * angular-translate - v2.2.0 - 2014-06-03
+ * http://github.com/PascalPrecht/angular-translate
  * Copyright (c) 2014 ; Licensed MIT
  */
 angular.module('pascalprecht.translate').provider('$translatePartialLoader', function () {
@@ -12,28 +12,44 @@ angular.module('pascalprecht.translate').provider('$translatePartialLoader', fun
   Part.prototype.parseUrl = function (urlTemplate, targetLang) {
     return urlTemplate.replace(/\{part\}/g, this.name).replace(/\{lang\}/g, targetLang);
   };
-  Part.prototype.getTable = function (lang, $q, $http, $httpOptions, urlTemplate, errorHandler) {
+  Part.prototype.getTable = function (lang, $q, $http, urlTemplate, errorHandler) {
     var deferred = $q.defer();
     if (!this.tables[lang]) {
       var self = this;
-      $http(angular.extend({
-        method: 'GET',
-        url: this.parseUrl(urlTemplate, lang)
-      }, $httpOptions)).success(function (data) {
-        self.tables[lang] = data;
-        deferred.resolve(data);
-      }).error(function () {
-        if (errorHandler) {
-          errorHandler(self.name, lang).then(function (data) {
+      var url = this.parseUrl(urlTemplate, lang);
+      // IE8 & 9 only Cross domain JSON GET request
+      if ('XDomainRequest' in window && window.XDomainRequest !== null && parseInt(navigator.userAgent.match(/MSIE ([\d.]+)/)[1], 10) < 10) {
+        $.ajax({
+          type: 'GET',
+          crossDomain: true,
+          url: url,
+          contentType: 'application/json; charset=utf-8',
+          dataType: 'json',
+          success: function (data) {
             self.tables[lang] = data;
             deferred.resolve(data);
-          }, function () {
-            deferred.reject(self.name);
+          }
+        });
+      } else {
+          $http({
+            method: 'GET',
+            url: url
+          }).success(function (data) {
+            self.tables[lang] = data;
+            deferred.resolve(data);
+          }).error(function () {
+            if (errorHandler) {
+              errorHandler(self.name, lang).then(function (data) {
+                self.tables[lang] = data;
+                deferred.resolve(data);
+              }, function () {
+                deferred.reject(self.name);
+              });
+            } else {
+              deferred.reject(self.name);
+            }
           });
-        } else {
-          deferred.reject(self.name);
-        }
-      });
+      }
     } else {
       deferred.resolve(this.tables[lang]);
     }
@@ -41,7 +57,7 @@ angular.module('pascalprecht.translate').provider('$translatePartialLoader', fun
   };
   var parts = {};
   function hasPart(name) {
-    return Object.prototype.hasOwnProperty.call(parts, name);
+    return parts.hasOwnProperty(name);
   }
   function isStringValid(str) {
     return angular.isString(str) && str !== '';
@@ -126,8 +142,7 @@ angular.module('pascalprecht.translate').provider('$translatePartialLoader', fun
         }
         for (var part in parts) {
           if (hasPart(part) && parts[part].isActive) {
-            loaders.push(parts[part].getTable(options.key, $q, $http, options.$http, options.urlTemplate, errorHandler).then(addTablePart));
-            parts[part].urlTemplate = options.urlTemplate;
+            loaders.push(parts[part].getTable(options.key, $q, $http, options.urlTemplate, errorHandler).then(addTablePart));
           }
         }
         if (loaders.length) {
@@ -170,16 +185,6 @@ angular.module('pascalprecht.translate').provider('$translatePartialLoader', fun
         if (hasPart(name)) {
           var wasActive = parts[name].isActive;
           if (removeData) {
-            var $translate = $injector.get('$translate');
-            var cache = $translate.loaderCache();
-            if (typeof cache === 'string') {
-              cache = $injector.get(cache);
-            }
-            if (typeof cache === 'object') {
-              angular.forEach(parts[name].tables, function (value, key) {
-                cache.remove(parts[name].parseUrl(parts[name].urlTemplate, key));
-              });
-            }
             delete parts[name];
           } else {
             parts[name].isActive = false;
